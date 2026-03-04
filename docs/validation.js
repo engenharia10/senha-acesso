@@ -1,5 +1,6 @@
 (function () {
   const STORAGE_KEY = 'alfatronic_validation_device_seed_num';
+  const ACT_CODE_KEY = 'alfatronic_activation_code_manual';
 
   function getOrCreateSeed() {
     let seed = localStorage.getItem(STORAGE_KEY);
@@ -50,9 +51,58 @@
     return (merged % 1000000000000n).toString().padStart(12, '0');
   }
 
+  function sanitize6(value) {
+    return (value || '').replace(/\D/g, '').slice(0, 6);
+  }
+
+  function saveActivationCode(value) {
+    const digits = sanitize6(value);
+    if (digits) {
+      localStorage.setItem(ACT_CODE_KEY, digits);
+    }
+  }
+
+  function getActivationCodeOrDefault() {
+    const stored = sanitize6(localStorage.getItem(ACT_CODE_KEY) || '');
+    if (stored) return stored.padStart(6, '0');
+    return deviceNumberFromBrowser().slice(-6);
+  }
+
+  function enableEditableActivationCode() {
+    const el = document.getElementById('display-codigo');
+    if (!el) return;
+
+    el.contentEditable = 'true';
+    el.setAttribute('role', 'textbox');
+    el.setAttribute('aria-label', 'Codigo de ativacao editavel');
+    el.textContent = getActivationCodeOrDefault();
+
+    if (el.dataset.editableReady === '1') return;
+    el.dataset.editableReady = '1';
+
+    el.addEventListener('input', function () {
+      const digits = sanitize6(el.textContent);
+      el.textContent = digits.padStart(6, '0');
+      saveActivationCode(digits);
+    });
+
+    el.addEventListener('focus', function () {
+      if (sanitize6(el.textContent) === '000000') {
+        el.textContent = '';
+      }
+    });
+
+    el.addEventListener('blur', function () {
+      const digits = sanitize6(el.textContent);
+      const finalCode = digits ? digits.padStart(6, '0') : getActivationCodeOrDefault();
+      el.textContent = finalCode;
+      saveActivationCode(finalCode);
+    });
+  }
+
   function fillFieldsOnOpen() {
     try {
-      const auto6 = deviceNumberFromBrowser().slice(-6);
+      const auto6 = getActivationCodeOrDefault();
 
       ['input-contra', 'input-senha6'].forEach(function (id) {
         const el = document.getElementById(id);
@@ -66,8 +116,12 @@
   }
 
   function start() {
+    enableEditableActivationCode();
     fillFieldsOnOpen();
-    setTimeout(fillFieldsOnOpen, 400);
+    setTimeout(function () {
+      enableEditableActivationCode();
+      fillFieldsOnOpen();
+    }, 400);
   }
 
   if (document.readyState === 'loading') {
