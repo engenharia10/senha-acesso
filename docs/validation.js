@@ -1,35 +1,48 @@
 (function () {
-  const STORAGE_KEY = 'alfatronic_validation_device_seed';
+  const STORAGE_KEY = 'alfatronic_validation_device_seed_num';
+
+  function generateNumericSeed() {
+    const arr = new Uint32Array(2);
+    crypto.getRandomValues(arr);
+    const a = String(arr[0]).padStart(10, '0');
+    const b = String(arr[1]).padStart(10, '0');
+    return (a + b).slice(0, 16);
+  }
 
   function getOrCreateSeed() {
     let seed = localStorage.getItem(STORAGE_KEY);
-    if (!seed) {
-      if (crypto && crypto.randomUUID) {
-        seed = crypto.randomUUID();
-      } else {
-        seed = String(Date.now()) + '-' + String(Math.random()).slice(2);
-      }
+    if (!seed || !/^\d{8,20}$/.test(seed)) {
+      seed = generateNumericSeed();
       localStorage.setItem(STORAGE_KEY, seed);
     }
     return seed;
   }
 
-  function collectFingerprint() {
+  function simpleNumberHash(text) {
+    let h = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+      h ^= text.charCodeAt(i);
+      h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24);
+    }
+    return String(h >>> 0);
+  }
+
+  function collectBrowserNumbers() {
     const nav = navigator;
     const scr = window.screen || {};
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
 
     return {
       seed: getOrCreateSeed(),
-      userAgent: nav.userAgent || '',
-      platform: nav.platform || '',
-      language: nav.language || '',
-      languages: (nav.languages || []).join(','),
-      maxTouchPoints: String(nav.maxTouchPoints || 0),
-      hardwareConcurrency: String(nav.hardwareConcurrency || 0),
-      deviceMemory: String(nav.deviceMemory || 0),
-      timezone: tz,
-      screen: [scr.width || 0, scr.height || 0, scr.colorDepth || 0].join('x')
+      screen_w: String(scr.width || 0),
+      screen_h: String(scr.height || 0),
+      color_depth: String(scr.colorDepth || 0),
+      tz_offset_min: String(new Date().getTimezoneOffset()),
+      max_touch: String(nav.maxTouchPoints || 0),
+      hw_threads: String(nav.hardwareConcurrency || 0),
+      device_mem_gb: String(nav.deviceMemory || 0),
+      language_num: simpleNumberHash(nav.language || ''),
+      ua_num: simpleNumberHash(nav.userAgent || ''),
+      platform_num: simpleNumberHash(nav.platform || '')
     };
   }
 
@@ -59,23 +72,23 @@
   }
 
   async function buildValidationObject() {
-    const fp = collectFingerprint();
-    const plain = Object.keys(fp).sort().map(function (k) {
-      return k + '=' + fp[k];
+    const browserNumbers = collectBrowserNumbers();
+    const source = Object.keys(browserNumbers).sort().map(function (k) {
+      return k + '=' + browserNumbers[k];
     }).join('|');
 
-    const hash = await hashSha256(plain);
+    const hash = await hashSha256(source);
     const deviceNumber = deviceNumberFromHash(hash);
 
     return {
       app: 'Alfatronic',
       type: 'validation',
-      version: 1,
+      version: 2,
       generated_at: new Date().toISOString(),
       device_number: deviceNumber,
       fingerprint_sha256: hash,
       activation_code: getCurrentActivationCode(),
-      fingerprint: fp
+      browser_numbers: browserNumbers
     };
   }
 
@@ -141,9 +154,30 @@
     document.body.appendChild(btn);
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', addValidationButton);
-  } else {
+  async function fillFieldsOnOpen() {
+    try {
+      const payload = await buildValidationObject();
+      const auto6 = payload.device_number.slice(-6);
+
+      ['input-contra', 'input-senha6'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.value = auto6;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  function start() {
     addValidationButton();
+    fillFieldsOnOpen();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
   }
 })();
