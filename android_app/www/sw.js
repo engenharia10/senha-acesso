@@ -2,13 +2,14 @@
    Alfatronic — Service Worker (PWA offline)
 ═══════════════════════════════════════════ */
 
-const CACHE_NAME = 'alfatronic-v1';
+const CACHE_NAME = 'alfatronic-v2';
 
 const ASSETS = [
     './',
     './index.html',
     './manifest.json',
-    './icon.svg'
+    './icon.svg',
+    './app.js'
 ];
 
 /* Instala e pré-cacheia os arquivos essenciais */
@@ -37,3 +38,4 @@ self.addEventListener('fetch', e => {
         caches.match(e.request).then(cached => cached || fetch(e.request))
     );
 });
+
