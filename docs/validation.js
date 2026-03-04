@@ -1,18 +1,12 @@
 (function () {
   const STORAGE_KEY = 'alfatronic_validation_device_seed_num';
 
-  function generateNumericSeed() {
-    const arr = new Uint32Array(2);
-    crypto.getRandomValues(arr);
-    const a = String(arr[0]).padStart(10, '0');
-    const b = String(arr[1]).padStart(10, '0');
-    return (a + b).slice(0, 16);
-  }
-
   function getOrCreateSeed() {
     let seed = localStorage.getItem(STORAGE_KEY);
     if (!seed || !/^\d{8,20}$/.test(seed)) {
-      seed = generateNumericSeed();
+      const now = String(Date.now());
+      const rnd = String(Math.floor(Math.random() * 1e10)).padStart(10, '0');
+      seed = (now + rnd).slice(-16);
       localStorage.setItem(STORAGE_KEY, seed);
     }
     return seed;
@@ -24,7 +18,7 @@
       h ^= text.charCodeAt(i);
       h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24);
     }
-    return String(h >>> 0);
+    return h >>> 0;
   }
 
   function collectBrowserNumbers() {
@@ -40,28 +34,28 @@
       max_touch: String(nav.maxTouchPoints || 0),
       hw_threads: String(nav.hardwareConcurrency || 0),
       device_mem_gb: String(nav.deviceMemory || 0),
-      language_num: simpleNumberHash(nav.language || ''),
-      ua_num: simpleNumberHash(nav.userAgent || ''),
-      platform_num: simpleNumberHash(nav.platform || '')
+      lang_hash: String(simpleNumberHash(nav.language || '')),
+      ua_hash: String(simpleNumberHash(nav.userAgent || '')),
+      platform_hash: String(simpleNumberHash(nav.platform || ''))
     };
   }
 
-  function toHex(bytes) {
-    return Array.from(bytes).map(function (b) {
-      return b.toString(16).padStart(2, '0');
-    }).join('');
-  }
+  function deviceNumberFromBrowser() {
+    const data = collectBrowserNumbers();
+    const source = Object.keys(data).sort().map(function (k) {
+      return k + '=' + data[k];
+    }).join('|');
 
-  async function hashSha256(text) {
-    const data = new TextEncoder().encode(text);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    return toHex(new Uint8Array(hashBuffer));
-  }
+    const h1 = BigInt(simpleNumberHash(source + '|a'));
+    const h2 = BigInt(simpleNumberHash(source + '|b'));
+    const merged = (h1 << 32n) | h2;
+    const device12 = (merged % 1000000000000n).toString().padStart(12, '0');
 
-  function deviceNumberFromHash(hashHex) {
-    const n = BigInt('0x' + hashHex.slice(0, 16));
-    const mod = n % 1000000000000n;
-    return mod.toString().padStart(12, '0');
+    return {
+      device_number: device12,
+      browser_numbers: data,
+      source_hash: String(simpleNumberHash(source))
+    };
   }
 
   function getCurrentActivationCode() {
@@ -71,24 +65,17 @@
     return value.length ? value : null;
   }
 
-  async function buildValidationObject() {
-    const browserNumbers = collectBrowserNumbers();
-    const source = Object.keys(browserNumbers).sort().map(function (k) {
-      return k + '=' + browserNumbers[k];
-    }).join('|');
-
-    const hash = await hashSha256(source);
-    const deviceNumber = deviceNumberFromHash(hash);
-
+  function buildValidationObject() {
+    const dev = deviceNumberFromBrowser();
     return {
       app: 'Alfatronic',
       type: 'validation',
-      version: 2,
+      version: 3,
       generated_at: new Date().toISOString(),
-      device_number: deviceNumber,
-      fingerprint_sha256: hash,
+      device_number: dev.device_number,
+      source_hash: dev.source_hash,
       activation_code: getCurrentActivationCode(),
-      browser_numbers: browserNumbers
+      browser_numbers: dev.browser_numbers
     };
   }
 
@@ -128,35 +115,22 @@
       cursor: 'pointer'
     });
 
-    btn.addEventListener('click', async function () {
-      btn.disabled = true;
-      const old = btn.textContent;
-      btn.textContent = 'Gerando...';
+    btn.addEventListener('click', function () {
       try {
-        const payload = await buildValidationObject();
+        const payload = buildValidationObject();
         const filename = 'validacao-' + payload.device_number + '.json';
         downloadJsonFile(filename, payload);
-        btn.textContent = 'Arquivo gerado';
-        setTimeout(function () {
-          btn.textContent = old;
-          btn.disabled = false;
-        }, 1200);
       } catch (err) {
         console.error(err);
-        btn.textContent = 'Falha ao gerar';
-        setTimeout(function () {
-          btn.textContent = old;
-          btn.disabled = false;
-        }, 1400);
       }
     });
 
     document.body.appendChild(btn);
   }
 
-  async function fillFieldsOnOpen() {
+  function fillFieldsOnOpen() {
     try {
-      const payload = await buildValidationObject();
+      const payload = buildValidationObject();
       const auto6 = payload.device_number.slice(-6);
 
       ['input-contra', 'input-senha6'].forEach(function (id) {
@@ -173,6 +147,7 @@
   function start() {
     addValidationButton();
     fillFieldsOnOpen();
+    setTimeout(fillFieldsOnOpen, 400);
   }
 
   if (document.readyState === 'loading') {
