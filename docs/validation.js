@@ -65,7 +65,7 @@
   function getActivationCodeOrDefault() {
     const stored = sanitize6(localStorage.getItem(ACT_CODE_KEY) || '');
     if (stored) return stored.padStart(6, '0');
-    return deviceNumberFromBrowser().slice(-6);
+    return '      ';
   }
 
   function enableEditableActivationCode() {
@@ -94,25 +94,19 @@
 
     el.addEventListener('blur', function () {
       const digits = sanitize6(el.textContent);
-      const finalCode = digits ? digits.padStart(6, '0') : getActivationCodeOrDefault();
+      const finalCode = digits ? digits.padStart(6, '0') : '      ';
       el.textContent = finalCode;
       saveActivationCode(finalCode);
     });
   }
 
   function fillFieldsOnOpen() {
-    try {
-      const auto6 = getActivationCodeOrDefault();
-
-      ['input-contra', 'input-senha6'].forEach(function (id) {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.value = auto6;
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-      });
-    } catch (err) {
-      console.error(err);
-    }
+    ['input-contra', 'input-senha6'].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.value = '';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
   }
 
   function start() {
@@ -130,3 +124,4 @@
     start();
   }
 })();
+
